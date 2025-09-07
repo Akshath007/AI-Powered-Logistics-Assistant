@@ -10,3 +10,4 @@ pystan>=3.3.0
 cmdstanpy>=1.1.0
 holidays>=0.29
 plotly
+prophet
