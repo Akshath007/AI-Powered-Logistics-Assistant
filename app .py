@@ -9,15 +9,10 @@ from datetime import datetime, timedelta
 import warnings
 import os
 import google.generativeai as genai
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import Pipeline
 warnings.filterwarnings('ignore')
-
-# Try to import Prophet, handle if not installed
-try:
-    from prophet import Prophet
-    PROPHET_AVAILABLE = True
-except ImportError:
-    st.warning("Prophet not installed. Please install it using: pip install prophet")
-    PROPHET_AVAILABLE = False
 
 # Page configuration
 st.set_page_config(
@@ -64,9 +59,9 @@ class LogisticsAssistant:
     def __init__(self):
         self.initialize_session_state()
         self.configure_gemini_api()
+        # Generate sample data if it doesn't exist
         if st.session_state.sample_data is None:
-            with st.spinner("Initializing sample data..."):
-                self.generate_sample_data()
+            self.generate_sample_data()
     
     def initialize_session_state(self):
         """Initialize Streamlit session state variables"""
@@ -97,50 +92,67 @@ class LogisticsAssistant:
             return True
         return False
     
-    @st.cache_data
-    def generate_sample_data(_self):
+    def generate_sample_data(self):
         """Generate sample shipping/logistics data for demonstration"""
-        np.random.seed(42)
-        
-        # Generate 2 years of daily data
-        start_date = datetime.now() - timedelta(days=730)
-        dates = pd.date_range(start=start_date, periods=730, freq='D')
-        
-        # Create realistic shipping demand with seasonal patterns
-        base_demand = 1000
-        seasonal_factor = 200 * np.sin(2 * np.pi * np.arange(730) / 365.25)
-        weekly_factor = 50 * np.sin(2 * np.pi * np.arange(730) / 7)
-        noise = np.random.normal(0, 50, 730)
-        trend = np.linspace(0, 300, 730)  # Growing trend
-        
-        shipment_demand = base_demand + seasonal_factor + weekly_factor + trend + noise
-        shipment_demand = np.maximum(shipment_demand, 100)  # Ensure positive values
-        
-        # Create additional features
-        routes = ['Asia-Europe', 'Trans-Pacific', 'Atlantic', 'Intra-Asia', 'Mediterranean']
-        container_types = ['20ft Standard', '40ft Standard', '40ft High Cube', 'Refrigerated']
-        ports = ['Shanghai', 'Singapore', 'Rotterdam', 'Los Angeles', 'Hamburg', 'Dubai', 'Hong Kong']
-        
-        data = []
-        for i, date in enumerate(dates):
-            for _ in range(np.random.randint(5, 15)):  # 5-15 shipments per day
-                origin_port = np.random.choice(ports)
-                destination_port = np.random.choice([p for p in ports if p != origin_port])
-                
-                data.append({
-                    'date': date,
-                    'shipment_demand': max(50, int(shipment_demand[i] + np.random.normal(0, 100))),
-                    'route': np.random.choice(routes),
-                    'container_type': np.random.choice(container_types),
-                    'origin_port': origin_port,
-                    'destination_port': destination_port,
-                    'cost_per_container': max(500, np.random.normal(2000, 500)),
-                    'delay_risk': np.random.choice(['Low', 'Medium', 'High'], p=[0.6, 0.3, 0.1]),
-                    'weight_tons': max(1, np.random.normal(15, 3))
-                })
-        
-        st.session_state.sample_data = pd.DataFrame(data)
-        return st.session_state.sample_data
+        try:
+            np.random.seed(42)
+            
+            # Generate 2 years of daily data
+            start_date = datetime.now() - timedelta(days=730)
+            dates = pd.date_range(start=start_date, periods=730, freq='D')
+            
+            # Create realistic shipping demand with seasonal patterns
+            base_demand = 1000
+            seasonal_factor = 200 * np.sin(2 * np.pi * np.arange(730) / 365.25)
+            weekly_factor = 50 * np.sin(2 * np.pi * np.arange(730) / 7)
+            noise = np.random.normal(0, 50, 730)
+            trend = np.linspace(0, 300, 730)  # Growing trend
+            
+            shipment_demand = base_demand + seasonal_factor + weekly_factor + trend + noise
+            shipment_demand = np.maximum(shipment_demand, 100)  # Ensure positive values
+            
+            # Create additional features
+            routes = ['Asia-Europe', 'Trans-Pacific', 'Atlantic', 'Intra-Asia', 'Mediterranean']
+            container_types = ['20ft Standard', '40ft Standard', '40ft High Cube', 'Refrigerated']
+            ports = ['Shanghai', 'Singapore', 'Rotterdam', 'Los Angeles', 'Hamburg', 'Dubai', 'Hong Kong']
+            
+            data = []
+            for i, date in enumerate(dates):
+                for _ in range(np.random.randint(5, 15)):  # 5-15 shipments per day
+                    origin_port = np.random.choice(ports)
+                    destination_port = np.random.choice([p for p in ports if p != origin_port])
+                    
+                    data.append({
+                        'date': date,
+                        'shipment_demand': max(50, int(shipment_demand[i] + np.random.normal(0, 100))),
+                        'route': np.random.choice(routes),
+                        'container_type': np.random.choice(container_types),
+                        'origin_port': origin_port,
+                        'destination_port': destination_port,
+                        'cost_per_container': max(500, np.random.normal(2000, 500)),
+                        'delay_risk': np.random.choice(['Low', 'Medium', 'High'], p=[0.6, 0.3, 0.1]),
+                        'weight_tons': max(1, np.random.normal(15, 3))
+                    })
+            
+            st.session_state.sample_data = pd.DataFrame(data)
+            return st.session_state.sample_data
+            
+        except Exception as e:
+            st.error(f"Error generating sample data: {str(e)}")
+            # Create minimal fallback data
+            fallback_data = pd.DataFrame({
+                'date': pd.date_range(start=datetime.now() - timedelta(days=30), periods=30, freq='D'),
+                'shipment_demand': np.random.randint(800, 1200, 30),
+                'route': np.random.choice(['Asia-Europe', 'Trans-Pacific'], 30),
+                'container_type': np.random.choice(['20ft Standard', '40ft Standard'], 30),
+                'origin_port': np.random.choice(['Shanghai', 'Singapore'], 30),
+                'destination_port': np.random.choice(['Rotterdam', 'Los Angeles'], 30),
+                'cost_per_container': np.random.uniform(1500, 2500, 30),
+                'delay_risk': np.random.choice(['Low', 'Medium', 'High'], 30),
+                'weight_tons': np.random.uniform(10, 20, 30)
+            })
+            st.session_state.sample_data = fallback_data
+            return fallback_data
     
     def call_gemini_api(self, query):
         """Call Google Gemini API for logistics-related queries"""
@@ -194,12 +206,8 @@ Keep responses concise but informative, provide actionable insights, and include
             else:
                 return f"❌ **Error calling Gemini API:** {str(e)}"
     
-    @st.cache_data
-    def create_forecast_model(_self, data, route_filter="All Routes"):
-        """Create Prophet forecasting model for shipment demand"""
-        if not PROPHET_AVAILABLE:
-            return None, "Prophet library not available"
-        
+    def create_simple_forecast(self, data, route_filter="All Routes", forecast_days=30):
+        """Simple forecasting using sklearn instead of Prophet"""
         try:
             # Filter data if specific route selected
             if route_filter != "All Routes":
@@ -208,28 +216,71 @@ Keep responses concise but informative, provide actionable insights, and include
             if len(data) < 10:
                 return None, "Insufficient data for forecasting (minimum 10 data points required)"
             
-            # Prepare data for Prophet (requires 'ds' and 'y' columns)
+            # Prepare data
             daily_demand = data.groupby('date')['shipment_demand'].sum().reset_index()
-            daily_demand.columns = ['ds', 'y']
-            daily_demand = daily_demand.sort_values('ds').reset_index(drop=True)
+            daily_demand = daily_demand.sort_values('date').reset_index(drop=True)
             
-            # Create and fit the model
-            model = Prophet(
-                daily_seasonality=True,
-                weekly_seasonality=True,
-                yearly_seasonality=True,
-                changepoint_prior_scale=0.05,
-                seasonality_prior_scale=10.0
+            if len(daily_demand) < 7:
+                return None, "Insufficient daily data for forecasting"
+            
+            # Create features (days since start)
+            daily_demand['days'] = (daily_demand['date'] - daily_demand['date'].min()).dt.days
+            
+            # Create polynomial pipeline for better forecasting
+            poly_model = Pipeline([
+                ('poly', PolynomialFeatures(degree=2, include_bias=False)),
+                ('linear', LinearRegression())
+            ])
+            
+            # Fit the model
+            X = daily_demand[['days']].values
+            y = daily_demand['shipment_demand'].values
+            poly_model.fit(X, y)
+            
+            # Create future predictions
+            last_day = daily_demand['days'].max()
+            future_days = np.arange(last_day + 1, last_day + forecast_days + 1).reshape(-1, 1)
+            
+            # Get predictions
+            historical_pred = poly_model.predict(X)
+            future_pred = poly_model.predict(future_days)
+            
+            # Ensure positive predictions
+            future_pred = np.maximum(future_pred, 50)
+            
+            # Calculate confidence intervals (simple approach)
+            residuals = y - historical_pred
+            std_error = np.std(residuals)
+            confidence_factor = 1.96  # 95% confidence interval
+            
+            # Create forecast dataframe
+            forecast_dates = pd.date_range(
+                start=daily_demand['date'].max() + pd.Timedelta(days=1),
+                periods=forecast_days,
+                freq='D'
             )
             
-            model.fit(daily_demand)
+            # Combine historical and future data
+            all_dates = list(daily_demand['date']) + list(forecast_dates)
+            all_predictions = list(historical_pred) + list(future_pred)
             
-            # Create future dataframe
-            future = model.make_future_dataframe(periods=90)  # 3 months ahead
-            forecast = model.predict(future)
+            # Create confidence intervals for future predictions only
+            future_upper = future_pred + confidence_factor * std_error
+            future_lower = np.maximum(future_pred - confidence_factor * std_error, 0)
             
-            return model, forecast
-        
+            # Extend confidence intervals to include historical data (using actual values)
+            all_upper = list(daily_demand['shipment_demand']) + list(future_upper)
+            all_lower = list(daily_demand['shipment_demand']) + list(future_lower)
+            
+            forecast_df = pd.DataFrame({
+                'ds': all_dates,
+                'yhat': all_predictions,
+                'yhat_lower': all_lower,
+                'yhat_upper': all_upper
+            })
+            
+            return poly_model, forecast_df
+            
         except Exception as e:
             return None, f"Error creating forecast: {str(e)}"
     
@@ -302,12 +353,17 @@ Keep responses concise but informative, provide actionable insights, and include
         """Render the Demand Forecasting tab"""
         st.markdown('<h2 class="tab-header">📈 Demand Forecasting</h2>', unsafe_allow_html=True)
         
-        if not PROPHET_AVAILABLE:
-            st.error("**Prophet library not available.** Please install it to use forecasting features.")
-            st.code("pip install prophet", language="bash")
-            return
+        # Check if data exists, generate if not
+        if st.session_state.sample_data is None:
+            with st.spinner("Loading sample data..."):
+                self.generate_sample_data()
         
         data = st.session_state.sample_data
+        
+        # Additional safety check
+        if data is None or data.empty:
+            st.error("❌ No data available. Please refresh the page.")
+            st.stop()
         
         col1, col2 = st.columns([3, 1])
         
@@ -316,11 +372,18 @@ Keep responses concise but informative, provide actionable insights, and include
             
             # Forecasting parameters
             forecast_days = st.selectbox("Forecast Period", [7, 14, 30, 60, 90], index=2)
-            route_filter = st.selectbox("Route Filter", ["All Routes"] + sorted(list(data['route'].unique())))
+            
+            # Safe route filter creation
+            try:
+                unique_routes = sorted(list(data['route'].unique()))
+                route_filter = st.selectbox("Route Filter", ["All Routes"] + unique_routes)
+            except Exception as e:
+                st.error(f"Error loading routes: {str(e)}")
+                route_filter = "All Routes"
             
             if st.button("🔮 Generate Forecast", type="primary", use_container_width=True):
                 with st.spinner("Building forecast model..."):
-                    model, forecast = self.create_forecast_model(data, route_filter)
+                    model, forecast = self.create_simple_forecast(data, route_filter, forecast_days)
                     
                     if model is not None:
                         st.session_state.forecast_data = {
@@ -380,7 +443,7 @@ Keep responses concise but informative, provide actionable insights, and include
                     fill='tonexty',
                     mode='lines',
                     line_color='rgba(0,0,0,0)',
-                    name='80% Confidence',
+                    name='95% Confidence',
                     fillcolor='rgba(255,127,14,0.2)'
                 ))
                 
@@ -414,26 +477,41 @@ Keep responses concise but informative, provide actionable insights, and include
                         st.metric("⚡ Peak Demand", f"{max_demand:,.0f}", delta=f"on {peak_date}")
                     
                     with col4_metrics:
-                        # ✅ FIXED: Added [0] index to compare first and last values
-                        trend = "📈 Growing" if future['yhat'].iloc[-1] > future['yhat'].iloc[0] else "📉 Declining"
-                        change_pct = ((future['yhat'].iloc[-1] - future['yhat'].iloc[0]) / future['yhat'].iloc[0]) * 100
-                        st.metric("📊 Trend", trend, delta=f"{change_pct:+.1f}%")
+                        # Fixed: Added [0] index to compare first and last values
+                        if len(future) > 1:
+                            trend = "📈 Growing" if future['yhat'].iloc[-1] > future['yhat'].iloc[0] else "📉 Declining"
+                            change_pct = ((future['yhat'].iloc[-1] - future['yhat'].iloc[0]) / future['yhat'].iloc[0]) * 100
+                            st.metric("📊 Trend", trend, delta=f"{change_pct:+.1f}%")
+                        else:
+                            st.metric("📊 Trend", "📊 Stable", delta="0.0%")
             
             else:
                 st.info("👆 **Generate a forecast** using the controls to see predictions and insights here.")
                 
                 # Show sample historical data chart
-                daily_demand = data.groupby('date')['shipment_demand'].sum().reset_index()
-                fig_sample = px.line(daily_demand.tail(90), x='date', y='shipment_demand',
-                                   title='📊 Recent 90 Days - Historical Demand')
-                fig_sample.update_layout(height=400)
-                st.plotly_chart(fig_sample, use_container_width=True)
+                try:
+                    daily_demand = data.groupby('date')['shipment_demand'].sum().reset_index()
+                    fig_sample = px.line(daily_demand.tail(90), x='date', y='shipment_demand',
+                                       title='📊 Recent 90 Days - Historical Demand')
+                    fig_sample.update_layout(height=400)
+                    st.plotly_chart(fig_sample, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error displaying historical data: {str(e)}")
     
     def render_dashboard_tab(self):
         """Render the Analytics Dashboard tab"""
         st.markdown('<h2 class="tab-header">📊 Analytics Dashboard</h2>', unsafe_allow_html=True)
         
+        # Check if data exists
+        if st.session_state.sample_data is None:
+            with st.spinner("Loading sample data..."):
+                self.generate_sample_data()
+        
         data = st.session_state.sample_data
+        
+        if data is None or data.empty:
+            st.error("❌ No data available. Please refresh the page.")
+            st.stop()
         
         # Date range selector
         col1, col2, col3 = st.columns([2, 2, 1])
@@ -465,7 +543,10 @@ Keep responses concise but informative, provide actionable insights, and include
             st.metric("💰 Total Cost", f"${total_cost:,.0f}")
         
         with col4:
-            high_risk_pct = (filtered_data['delay_risk'] == 'High').sum() / len(filtered_data) * 100
+            if len(filtered_data) > 0:
+                high_risk_pct = (filtered_data['delay_risk'] == 'High').sum() / len(filtered_data) * 100
+            else:
+                high_risk_pct = 0
             st.metric("⚠️ High Risk %", f"{high_risk_pct:.1f}%")
         
         with col5:
@@ -526,63 +607,21 @@ Keep responses concise but informative, provide actionable insights, and include
         
         with col2:
             # Risk heatmap by route
-            risk_pivot = filtered_data.groupby(['route', 'delay_risk']).size().unstack(fill_value=0)
-            
-            fig4 = px.imshow(
-                risk_pivot.values,
-                labels=dict(x="Risk Level", y="Route", color="Count"),
-                x=risk_pivot.columns,
-                y=risk_pivot.index,
-                title='🎯 Risk Assessment Heatmap',
-                color_continuous_scale='RdYlGn_r'
-            )
-            fig4.update_layout(height=400)
-            st.plotly_chart(fig4, use_container_width=True)
-        
-        # Advanced analytics
-        st.markdown("### 📊 Advanced Analytics")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Seasonal analysis
-            filtered_data['month'] = filtered_data['date'].dt.month_name()
-            monthly_demand = filtered_data.groupby('month')['shipment_demand'].mean().reindex([
-                'January', 'February', 'March', 'April', 'May', 'June',
-                'July', 'August', 'September', 'October', 'November', 'December'
-            ])
-            
-            fig5 = px.bar(
-                x=monthly_demand.index,
-                y=monthly_demand.values,
-                title='📅 Average Monthly Demand Pattern',
-                labels={'x': 'Month', 'y': 'Average Demand'},
-                color=monthly_demand.values,
-                color_continuous_scale='Viridis'
-            )
-            fig5.update_layout(height=400, showlegend=False)
-            st.plotly_chart(fig5, use_container_width=True)
-        
-        with col2:
-            # Cost vs Demand scatter
-            route_analysis = filtered_data.groupby('route').agg({
-                'shipment_demand': 'mean',
-                'cost_per_container': 'mean',
-                'delay_risk': lambda x: (x == 'High').sum() / len(x) * 100
-            }).round(2)
-            
-            fig6 = px.scatter(
-                route_analysis,
-                x='cost_per_container',
-                y='shipment_demand',
-                size='delay_risk',
-                title='💰 Cost vs Demand Analysis',
-                labels={'cost_per_container': 'Avg Cost per Container ($)', 
-                       'shipment_demand': 'Avg Demand'},
-                hover_data={'delay_risk': ':.1f'}
-            )
-            fig6.update_layout(height=400)
-            st.plotly_chart(fig6, use_container_width=True)
+            try:
+                risk_pivot = filtered_data.groupby(['route', 'delay_risk']).size().unstack(fill_value=0)
+                
+                fig4 = px.imshow(
+                    risk_pivot.values,
+                    labels=dict(x="Risk Level", y="Route", color="Count"),
+                    x=risk_pivot.columns,
+                    y=risk_pivot.index,
+                    title='🎯 Risk Assessment Heatmap',
+                    color_continuous_scale='RdYlGn_r'
+                )
+                fig4.update_layout(height=400)
+                st.plotly_chart(fig4, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error creating risk heatmap: {str(e)}")
         
         # Data summary table
         st.markdown("### 📋 Recent Shipment Data")
@@ -662,7 +701,7 @@ Keep responses concise but informative, provide actionable insights, and include
             st.markdown("**🚢 AI-Powered Logistics Assistant**")
         
         with col2:
-            st.markdown("Built with Streamlit • Prophet • Google Gemini")
+            st.markdown("Built with Streamlit • Scikit-Learn • Google Gemini")
         
         with col3:
             st.markdown(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
